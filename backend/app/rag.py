@@ -1,13 +1,24 @@
-import time, os, math, json, hashlib, uuid
+import time, os, math, json, hashlib, uuid, re
 from typing import List, Dict, Tuple
 import numpy as np
 from .settings import settings
 from .ingest import chunk_text, doc_hash
 from qdrant_client import QdrantClient, models as qm
+from collections import Counter
 
 # ---- Simple local embedder (deterministic) ----
 def _tokenize(s: str) -> List[str]:
-    return [t.lower() for t in s.split()]
+    # Keep alphanumerics and apostrophes, lowercase for lexical matching
+    return re.findall(r"[a-z0-9']+", s.lower())
+
+def _build_lexical_meta(text: str) -> Dict:
+    tokens = _tokenize(text)
+    tf_counter = Counter(tokens)
+    return {
+        "tokens": tokens, # List[str]
+        "tf": {k: int(v) for k, v in tf_counter.items()}, # Dict[str, int]
+        "length": len(tokens), # int
+    }
 
 class LocalEmbedder:
     def __init__(self, dim: int = 384):
@@ -146,6 +157,11 @@ class Metrics:
 
 class RAGEngine:
     def __init__(self):
+        self._df = Counter()
+        self._num_docs = 0
+        self._avg_doc_len = 0.0
+        self._total_doc_len = 0
+        self._all_meta: List[Dict] = []
         self.embedder = LocalEmbedder(dim=384)
         # Vector store selection
         if settings.vector_store == "qdrant":
@@ -175,6 +191,59 @@ class RAGEngine:
         self._doc_titles = set()
         self._chunk_count = 0
 
+    def _tokenize_query(self, query: str) -> List[str]:
+        return _tokenize(query)
+    
+    def _idf(self, term: str) -> float:
+        # BM25-style IDF with smoothing
+        n = max(1, self._num_docs)
+        df = self._df.get(term, 0)
+        return math.log(1.0 + (n - df + 0.5) / (df + 0.5))
+
+    def _bm25_tf_norm(self, tf: int, doc_len: int, k1: float = 1.2, b: float = 0.75) -> float:
+        if tf <= 0:
+            return 0.0
+        avg_len = self._avg_doc_len if self._avg_doc_len > 0 else 1.0
+        denom = tf + k1 * (1.0 - b + b * (doc_len / avg_len))
+        return (tf * (k1 + 1.0)) / (denom + 1e-9)
+
+    def _lexical_search(self, query: str, k: int = 4) -> List[Tuple[float, Dict]]:
+        q_terms = self._tokenize_query(query)
+        if not q_terms:
+            return []
+
+        # Use unique query terms so repeated words do not dominate
+        q_unique = set(q_terms)
+
+        # Candidate corpus source
+        if isinstance(self.store, InMemoryStore):
+            candidates = self.store.meta
+        else:
+            # For Qdrant mode, this works if you keep a local copy of metadata
+            # during ingest. Add: self._all_meta = [] in __init__, then
+            # self._all_meta.extend(metas) at the end of ingest_chunks.
+            candidates = getattr(self, "_all_meta", [])
+
+        scored: List[Tuple[float, Dict]] = []
+        for meta in candidates:
+            tf_map = meta.get("tf", {}) or {}
+            doc_len = int(meta.get("length", 0) or 0)
+            if doc_len <= 0:
+                continue
+
+            score = 0.0
+            for term in q_unique:
+                tf = int(tf_map.get(term, 0) or 0)
+                if tf <= 0:
+                    continue
+                score += self._idf(term) * self._bm25_tf_norm(tf, doc_len)
+
+            if score > 0:
+                scored.append((float(score), meta))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[:k]
+
     def ingest_chunks(self, chunks: List[Dict]) -> Tuple[int, int]:
         vectors = []
         metas = []
@@ -183,12 +252,16 @@ class RAGEngine:
         for ch in chunks:
             text = ch["text"]
             h = doc_hash(text)
+            lex = _build_lexical_meta(text)
             meta = {
                 "id": h,
                 "hash": h,
                 "title": ch["title"],
                 "section": ch.get("section"),
                 "text": text,
+                "tokens": lex["tokens"],
+                "tf": lex["tf"],
+                "length": lex["length"],
             }
             v = self.embedder.embed(text)
             vectors.append(v)
@@ -196,15 +269,71 @@ class RAGEngine:
             self._doc_titles.add(ch["title"])
             self._chunk_count += 1
 
+            self._num_docs += 1
+            self._total_doc_len += lex["length"]
+            self._avg_doc_len = self._total_doc_len / max(1, self._num_docs)
+            for term in set(lex["tokens"]): self._df[term] += 1
+
+
         self.store.upsert(vectors, metas)
+        self._all_meta.extend(metas)
         return (len(self._doc_titles) - len(doc_titles_before), len(metas))
+    
+    def _rrf_fuse(
+        self,
+        dense_results: List[Tuple[float, Dict]],
+        lexical_results: List[Tuple[float, Dict]],
+        final_k: int = 4,
+        fusion_k: int = 60,
+    ) -> List[Dict]:
+        # RRF uses rank positions, not raw similarity values.
+        by_id: Dict[str, Dict] = {}
+
+        def _key(meta: Dict, fallback_rank: int, source: str) -> str:
+            return str(meta.get("hash") or meta.get("id") or f"{source}:{fallback_rank}")
+
+        # Add dense rank contributions
+        for rank, (_, meta) in enumerate(dense_results, start=1):
+            key = _key(meta, rank, "dense")
+            if key not in by_id:
+                by_id[key] = {"meta": meta, "rrf": 0.0}
+            by_id[key]["rrf"] += 1.0 / (fusion_k + rank)
+
+        # Add lexical rank contributions
+        for rank, (_, meta) in enumerate(lexical_results, start=1):
+            key = _key(meta, rank, "lex")
+            if key not in by_id:
+                by_id[key] = {"meta": meta, "rrf": 0.0}
+            by_id[key]["rrf"] += 1.0 / (fusion_k + rank)
+
+        ranked = sorted(by_id.values(), key=lambda x: x["rrf"], reverse=True)
+        return [x["meta"] for x in ranked[:final_k]]
 
     def retrieve(self, query: str, k: int = 4) -> List[Dict]:
         t0 = time.time()
+
+        # Candidate pool size for each retriever before fusion
+        dense_k = max(k * 5, 20)
+        lexical_k = max(k * 5, 20)
+        fusion_k = 60
+
         qv = self.embedder.embed(query)
-        results = self.store.search(qv, k=k)
-        self.metrics.add_retrieval((time.time()-t0)*1000.0)
-        return [meta for score, meta in results]
+        dense_results = self.store.search(qv, k=dense_k)              # List[(score, meta)]
+        lexical_results = self._lexical_search(query, k=lexical_k)    # List[(score, meta)]
+
+        # If lexical has no hits, fall back to dense-only
+        if lexical_results:
+            fused = self._rrf_fuse(
+                dense_results=dense_results,
+                lexical_results=lexical_results,
+                final_k=k,
+                fusion_k=fusion_k,
+            )
+        else:
+            fused = [meta for _, meta in dense_results[:k]]
+
+        self.metrics.add_retrieval((time.time() - t0) * 1000.0)
+        return fused
 
     def generate(self, query: str, contexts: List[Dict]) -> str:
         t0 = time.time()
@@ -236,3 +365,4 @@ def build_chunks_from_docs(docs: List[Dict], chunk_size: int, overlap: int) -> L
         for ch in chunk_text(d["text"], chunk_size, overlap):
             out.append({"title": d["title"], "section": d["section"], "text": ch})
     return out
+

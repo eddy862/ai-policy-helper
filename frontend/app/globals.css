@@ -251,16 +251,16 @@ body.app-body {
 }
 
 .msg-content p {
-  margin: 0 0 10px;
+    margin: 0 0 10px;
 }
 
 .msg-content p:last-child {
-  margin-bottom: 0;
+    margin-bottom: 0;
 }
 
 .msg-content strong {
-  font-weight: 700;
-  color: #ffffff;
+    font-weight: 700;
+    color: #ffffff;
 }
 
 .citation-row {

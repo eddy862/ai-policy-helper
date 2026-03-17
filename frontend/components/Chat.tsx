@@ -33,6 +33,7 @@ export default function Chat() {
     setLoading(true);
     try {
       const res = await apiAsk(q);
+      console.log('API response:', res);
       const ai: Message = { role: 'assistant', content: res.answer, citations: res.citations, chunks: res.chunks };
       setMessages(m => [...m, ai]);
     } catch (e: any) {
