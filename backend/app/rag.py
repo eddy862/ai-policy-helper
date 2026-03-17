@@ -208,7 +208,14 @@ class RAGEngine:
 
     def generate(self, query: str, contexts: List[Dict]) -> str:
         t0 = time.time()
-        answer = self.llm.generate(query, contexts)
+        try:
+            answer = self.llm.generate(query, contexts)
+        except Exception as e:
+            # Runtime provider failure (401/network/etc): fall back to deterministic stub
+            self.llm = StubLLM()
+            self.llm_name = "stub"
+            answer = self.llm.generate(query, contexts)
+            
         self.metrics.add_generation((time.time()-t0)*1000.0)
         return answer
 

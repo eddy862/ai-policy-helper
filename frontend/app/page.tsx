@@ -3,19 +3,34 @@ import AdminPanel from '@/components/AdminPanel';
 
 export default function Page() {
   return (
-    <div>
-      <h1>AI Policy & Product Helper</h1>
-      <p style={{color:'#555'}}>Local-first RAG starter. Ingest sample docs, ask questions, and see citations.</p>
-      <AdminPanel />
-      <Chat />
-      <div className="card">
-        <h3>How to test</h3>
-        <ol>
-          <li>Click <b>Ingest sample docs</b>.</li>
-          <li>Ask: <i>Can a customer return a damaged blender after 20 days?</i></li>
-          <li>Ask: <i>What’s the shipping SLA to East Malaysia for bulky items?</i></li>
-        </ol>
-      </div>
+    <div className="app-shell">
+      <aside className="app-sidebar">
+        <div className="brand-block">
+          <div className="brand-dot" />
+          <div>
+            <h1 className="brand-title">AI Policy Helper</h1>
+            <p className="brand-subtitle">Local-first RAG assistant</p>
+          </div>
+        </div>
+
+        <AdminPanel />
+
+        <div className="tips-card">
+          <h3>Try these prompts</h3>
+          <ul>
+            <li>Can a customer return a damaged blender after 20 days?</li>
+            <li>What is the shipping SLA to East Malaysia for bulky items?</li>
+          </ul>
+        </div>
+      </aside>
+
+      <main className="app-main">
+        <header className="chat-header">
+          <h2>Chat</h2>
+          <p>Ask a question and inspect citations and source chunks.</p>
+        </header>
+        <Chat />
+      </main>
     </div>
   );
 }
