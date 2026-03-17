@@ -37,10 +37,13 @@ def ingest():
 
 @app.post("/api/ask", response_model=AskResponse)
 def ask(req: AskRequest):
-    ctx = engine.retrieve(req.query, k=req.k or 4)
+    ctx = engine.retrieve(req.query, k=req.k or 4) # context = retrieve relevant chunks from vector store (qdrant or in-memory)
     answer = engine.generate(req.query, ctx)
+
+    # retrive metadata from retrieved context to return as citations and chunks in the response
     citations = [Citation(title=c.get("title"), section=c.get("section")) for c in ctx]
     chunks = [Chunk(title=c.get("title"), section=c.get("section"), text=c.get("text")) for c in ctx]
+
     stats = engine.stats()
     return AskResponse(
         query=req.query,

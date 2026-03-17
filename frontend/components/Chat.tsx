@@ -14,12 +14,15 @@ export default function Chat() {
     const my = { role: 'user' as const, content: q };
     setMessages(m => [...m, my]);
     setLoading(true);
+
     try {
       const res = await apiAsk(q);
       const ai: Message = { role: 'assistant', content: res.answer, citations: res.citations, chunks: res.chunks };
+      console.log('AI response', ai);
       setMessages(m => [...m, ai]);
     } catch (e:any) {
       setMessages(m => [...m, { role: 'assistant', content: 'Error: ' + e.message }]);
+      console.error('Error asking question', e);
     } finally {
       setLoading(false);
       setQ('');
@@ -33,7 +36,9 @@ export default function Chat() {
         {messages.map((m, i) => (
           <div key={i} style={{margin: '8px 0'}}>
             <div style={{fontSize:12, color:'#666'}}>{m.role === 'user' ? 'You' : 'Assistant'}</div>
+
             <div>{m.content}</div>
+
             {m.citations && m.citations.length>0 && (
               <div style={{marginTop:6}}>
                 {m.citations.map((c, idx) => (
@@ -41,6 +46,7 @@ export default function Chat() {
                 ))}
               </div>
             )}
+            
             {m.chunks && m.chunks.length>0 && (
               <details style={{marginTop:6}}>
                 <summary>View supporting chunks</summary>

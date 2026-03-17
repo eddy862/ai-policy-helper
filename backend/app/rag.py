@@ -1,4 +1,4 @@
-import time, os, math, json, hashlib
+import time, os, math, json, hashlib, uuid
 from typing import List, Dict, Tuple
 import numpy as np
 from .settings import settings
@@ -70,7 +70,12 @@ class QdrantStore:
     def upsert(self, vectors: List[np.ndarray], metadatas: List[Dict]):
         points = []
         for i, (v, m) in enumerate(zip(vectors, metadatas)):
-            points.append(qm.PointStruct(id=m.get("id") or m.get("hash") or i, vector=v.tolist(), payload=m))
+            raw_id = m.get("id") or m.get("hash")
+            if raw_id and len(raw_id) >= 32: 
+                point_id = str(uuid.UUID(raw_id[:32])) # qdrant accept standard UUID strings (36 chars with hyphens, e.g. 550e8400-e29b-41d4-a716-446655440000)
+            else:
+                point_id = i
+            points.append(qm.PointStruct(id=point_id, vector=v.tolist(), payload=m))
         self.client.upsert(collection_name=self.collection, points=points)
 
     def search(self, query: np.ndarray, k: int = 4) -> List[Tuple[float, Dict]]:
