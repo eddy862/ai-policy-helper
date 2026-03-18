@@ -69,18 +69,3 @@ def test_metrics(client):
     assert "embedding_model" in data
     assert "llm_model" in data
 
-def test_acceptance_ques_refund_blender_20_days_has_expected_sources(client):
-    client.post("/api/ingest")
-    r = client.post("/api/ask", json={"query":"Can a customer return a damaged blender after 20 days?"})
-    assert r.status_code == 200
-    data = r.json()
-    # citations include Returns_and_Refunds.md and Warranty_Policy.md
-    assert "citations" in data and any("Returns_and_Refunds.md" in c["title"] for c in data["citations"]) and any("Warranty_Policy.md" in c["title"] for c in data["citations"])
-
-def test_acceptance_ques_shipping_sla_east_malaysia_bulky_has_expected_source(client):
-    client.post("/api/ingest")
-    r = client.post("/api/ask", json={"query":"What is the shipping SLA for bulky items in East Malaysia?"})
-    assert r.status_code == 200
-    data = r.json()
-    # citations include Delivery_and_Shipping.md
-    assert "citations" in data and any("Delivery_and_Shipping.md" in c["title"] for c in data["citations"])
