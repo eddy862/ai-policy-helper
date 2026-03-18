@@ -12,7 +12,7 @@ function renderInlineBold(text: string) {
   });
 }
 
-type Message = { role: 'user' | 'assistant', content: string, citations?: { title: string, section?: string }[], chunks?: { title: string, section?: string, text: string }[] };
+type Message = { role: 'user' | 'assistant', content: string, citations?: { title: string, section?: string }[], chunks?: { title: string, section?: string, text: string, score: number }[] };
 
 export default function Chat() {
   const [messages, setMessages] = React.useState<Message[]>([]);
@@ -80,8 +80,9 @@ export default function Chat() {
                 {m.chunks.map((c, idx) => (
                   <div key={idx} className="chunk-card">
                     <div className="chunk-title">
-                      {c.title}
-                      {c.section ? ' | ' + c.section : ''}
+                       {c.title} 
+                       {c.section ? ' | ' + c.section : ''} 
+                       {' | score: ' + c.score.toFixed(4)} 
                     </div>
                     <div className="chunk-text">{c.text}</div>
                   </div>
@@ -109,7 +110,7 @@ export default function Chat() {
           }}
         />
         <button className="btn btn-primary" onClick={send} disabled={loading}>
-          Send
+          {loading ? 'Loading...' : 'Send'}
         </button>
       </div>
     </section>

@@ -5,6 +5,9 @@ from .settings import settings
 from .ingest import chunk_text, doc_hash
 from qdrant_client import QdrantClient, models as qm
 from collections import Counter
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ---- Simple local embedder (deterministic) ----
 def _tokenize(s: str) -> List[str]:
@@ -279,27 +282,25 @@ class RAGEngine:
         self._all_meta.extend(metas)
         return (len(self._doc_titles) - len(doc_titles_before), len(metas))
     
+    # RRF score = 1/(fusion_k + dense_rank) + 1/(fusion_k + lexical_rank)
     def _rrf_fuse(
         self,
         dense_results: List[Tuple[float, Dict]],
         lexical_results: List[Tuple[float, Dict]],
         final_k: int = 4,
         fusion_k: int = 60,
-    ) -> List[Dict]:
-        # RRF uses rank positions, not raw similarity values.
+    ) -> List[Tuple[float, Dict]]:
         by_id: Dict[str, Dict] = {}
 
         def _key(meta: Dict, fallback_rank: int, source: str) -> str:
             return str(meta.get("hash") or meta.get("id") or f"{source}:{fallback_rank}")
 
-        # Add dense rank contributions
         for rank, (_, meta) in enumerate(dense_results, start=1):
             key = _key(meta, rank, "dense")
             if key not in by_id:
                 by_id[key] = {"meta": meta, "rrf": 0.0}
             by_id[key]["rrf"] += 1.0 / (fusion_k + rank)
 
-        # Add lexical rank contributions
         for rank, (_, meta) in enumerate(lexical_results, start=1):
             key = _key(meta, rank, "lex")
             if key not in by_id:
@@ -307,31 +308,28 @@ class RAGEngine:
             by_id[key]["rrf"] += 1.0 / (fusion_k + rank)
 
         ranked = sorted(by_id.values(), key=lambda x: x["rrf"], reverse=True)
-        return [x["meta"] for x in ranked[:final_k]]
+        return [(float(x["rrf"]), x["meta"]) for x in ranked[:final_k]]
 
-    def retrieve(self, query: str, k: int = 4) -> List[Dict]:
+    def retrieve(self, query: str, k: int = 4, dense_k: int = 5, lexical_k: int = 5) -> List[Dict]:
         t0 = time.time()
 
-        # Candidate pool size for each retriever before fusion
-        dense_k = max(k * 5, 20)
-        lexical_k = max(k * 5, 20)
-        fusion_k = 60
-
         qv = self.embedder.embed(query)
-        dense_results = self.store.search(qv, k=dense_k)              # List[(score, meta)]
-        lexical_results = self._lexical_search(query, k=lexical_k)    # List[(score, meta)]
+        dense_results = self.store.search(qv, k=dense_k)
+        logger.debug(f"Dense search results: {dense_results}")
+        lexical_results = self._lexical_search(query, k=lexical_k)
+        logger.debug(f"Lexical search results: {lexical_results}")
 
-        # If lexical has no hits, fall back to dense-only
         if lexical_results:
-            fused = self._rrf_fuse(
+            fused_ranked = self._rrf_fuse(
                 dense_results=dense_results,
                 lexical_results=lexical_results,
                 final_k=k,
-                fusion_k=fusion_k,
             )
+            fused = [{**meta, "score": score} for score, meta in fused_ranked]
         else:
-            fused = [meta for _, meta in dense_results[:k]]
+            fused = [{**meta, "score": float(score)} for score, meta in dense_results[:k]]
 
+        logger.debug(f"Fused search results: {fused}")
         self.metrics.add_retrieval((time.time() - t0) * 1000.0)
         return fused
 
@@ -364,5 +362,7 @@ def build_chunks_from_docs(docs: List[Dict], chunk_size: int, overlap: int) -> L
     for d in docs:
         for ch in chunk_text(d["text"], chunk_size, overlap):
             out.append({"title": d["title"], "section": d["section"], "text": ch})
+    logger.info(f"Built {len(out)} chunks from {len(docs)} documents")
+    logger.debug(f"Chunks: {out}")
     return out
 

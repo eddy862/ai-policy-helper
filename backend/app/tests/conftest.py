@@ -3,7 +3,7 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
-# Deterministic/offline test defaults
+# use stub for testing
 os.environ["LLM_PROVIDER"] = "stub"
 os.environ.pop("OPENROUTER_API_KEY", None)
 os.environ["VECTOR_STORE"] = "memory"

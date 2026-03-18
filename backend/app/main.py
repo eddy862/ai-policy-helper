@@ -6,6 +6,12 @@ from .models import IngestResponse, AskRequest, AskResponse, MetricsResponse, Ci
 from .settings import settings
 from .ingest import load_documents
 from .rag import RAGEngine, build_chunks_from_docs
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
 
 app = FastAPI(title="AI Policy & Product Helper")
 
@@ -37,12 +43,12 @@ def ingest():
 
 @app.post("/api/ask", response_model=AskResponse)
 def ask(req: AskRequest):
-    ctx = engine.retrieve(req.query, k=req.k or 4) # context = retrieve relevant chunks from vector store (qdrant or in-memory)
+    ctx = engine.retrieve(req.query, k=req.k or 4, dense_k=req.dense_k or 5, lexical_k=req.lexical_k or 5) # context = retrieve relevant chunks from vector store (qdrant or in-memory)
     answer = engine.generate(req.query, ctx)
 
     # retrive metadata from retrieved context to return as citations and chunks in the response
     citations = [Citation(title=c.get("title"), section=c.get("section")) for c in ctx]
-    chunks = [Chunk(title=c.get("title"), section=c.get("section"), text=c.get("text")) for c in ctx]
+    chunks = [Chunk(title=c.get("title"), section=c.get("section"), text=c.get("text"), score=c.get("score")) for c in ctx]
 
     stats = engine.stats()
     return AskResponse(

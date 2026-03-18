@@ -342,7 +342,9 @@ body.app-body {
 @media (max-width: 960px) {
     .app-shell {
         grid-template-columns: 1fr;
-        height: auto;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100dvh;
+        overflow: hidden;
     }
 
     body.app-body {
@@ -350,6 +352,43 @@ body.app-body {
     }
 
     .app-main {
-        min-height: 70vh;
+        min-height: 0;
+        height: auto;
+        overflow: hidden;
+    }
+
+    .chat-panel {
+        min-height: 0;
+    }
+
+    .chat-stream {
+        min-height: 0;
+        overflow: auto;
+        /* messages scroll here */
+    }
+
+    .composer {
+        position: sticky;
+        bottom: 0;
+        background: #0a1127;
+        z-index: 2;
+        padding-bottom: calc(14px + env(safe-area-inset-bottom));
+    }
+
+    .app-sidebar {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        align-items: stretch;
+    }
+
+    .brand-block {
+        grid-column: 1 / -1;
+        width: 100%;
+    }
+
+    .admin-panel,
+    .tips-card {
+        height: 100%;
     }
 }
