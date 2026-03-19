@@ -1,6 +1,15 @@
 > **Author:** Eddy  
 > **Email:** limeddy1125@gmail.com
 
+## Table of Contents
+
+- [1. Project Overview](#1-project-overview)
+- [2. Setup Instructions](#2-setup-instructions)
+- [3. Architecture](#3-architecture)
+- [4. Evaluation & Testing](#4-evaluation--testing)
+- [5. Extensions Implemented & Trade Offs](#5-extensions-implemented--trade-offs)
+- [6. What I'd Ship Next](#6-what-id-ship-next)
+
 ## 1. Project Overview
 
 **AI Policy & Product Helper** is a local-first RAG system for policy Q&A with citations—retrieve relevant docs and generate answers backed by sources.
