@@ -43,12 +43,32 @@ def ingest():
 
 @app.post("/api/ask", response_model=AskResponse)
 def ask(req: AskRequest):
-    ctx = engine.retrieve(req.query, k=req.k or 4, dense_k=req.dense_k or 5, lexical_k=req.lexical_k or 5) # context = retrieve relevant chunks from vector store (qdrant or in-memory)
-    answer = engine.generate(req.query, ctx)
+    ctx = engine.retrieve(
+        req.query, k=req.k or 4, 
+        dense_k=req.dense_k or 5, 
+        lexical_k=req.lexical_k or 5
+    ) # context = retrieve relevant chunks from vector store (qdrant or in-memory)
+
+    confidence = engine.assess_confidence(ctx)
+
+    if confidence["needs_clarification"]:
+        answer = engine.build_abstain_answer(ctx, confidence)
+    else:
+        answer = engine.generate(req.query, ctx)
 
     # retrive metadata from retrieved context to return as citations and chunks in the response
     citations = [Citation(title=c.get("title"), section=c.get("section")) for c in ctx]
-    chunks = [Chunk(title=c.get("title"), section=c.get("section"), text=c.get("text"), score=c.get("score")) for c in ctx]
+    chunks = [
+        Chunk(
+            title=c.get("title"), 
+            section=c.get("section"), 
+            text=c.get("text"), 
+            score=c.get("score"), 
+            dense_rank=c.get("dense_rank"), 
+            lexical_rank=c.get("lexical_rank")
+        ) 
+        for c in ctx
+    ]
 
     stats = engine.stats()
     return AskResponse(
@@ -59,5 +79,11 @@ def ask(req: AskRequest):
         metrics={
             "retrieval_ms": stats["avg_retrieval_latency_ms"],
             "generation_ms": stats["avg_generation_latency_ms"],
+            "confidence": confidence["level"],
+            "needs_clarification": confidence["needs_clarification"],
+            "confidence_reason": confidence["reason"],
+            "top_score": confidence["top_score"],
+            "score_gap": confidence["score_gap"],
+            "source_diversity": confidence["source_diversity"],
         }
     )

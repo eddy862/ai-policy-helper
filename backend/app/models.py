@@ -20,6 +20,8 @@ class Chunk(BaseModel):
     section: str | None = None
     text: str
     score: float | None = None
+    dense_rank: int | None = None
+    lexical_rank: int | None = None
 
 class AskResponse(BaseModel):
     query: str

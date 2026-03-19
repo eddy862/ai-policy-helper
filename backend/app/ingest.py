@@ -46,8 +46,7 @@ def load_documents(data_dir: str) -> List[Dict]:
                 "section": section,
                 "text": body
             })
-    logger.info(f"Loaded {len(docs)} documents from {data_dir}")
-    logger.debug(f"Docs: {docs}")
+    logger.info("Docs loaded: count=%d sample=%s", len(docs), docs[:2])
     return docs
 
 def doc_hash(text: str) -> str:

@@ -12,18 +12,21 @@
 
 ## 1. Project Overview
 
-**AI Policy & Product Helper** is a local-first RAG system for policy Q&A with citations—retrieve relevant docs and generate answers backed by sources.
+**AI Policy & Product Helper** is a local-first RAG system for policy and product Q&A.  
+It ingests internal policy docs, retrieves evidence with hybrid search, and generates grounded answers with citations and retrieval diagnostics.
 
 ### Key Features
 
-- **Offline-First**: Works completely locally with stub LLM and built-in embeddings.
-- **Flexible Models**: Swap stub LLM for real models such as ChatGPT
-- **Hybrid Retrieval**: Dense (semantic) + lexical (keyword) search for precision.
-- **Citations**: Every answer includes source title, section, and relevance scores.
+- **Local-First + Flexible LLMs**: Runs fully offline with stub mode, or uses OpenRouter for real LLM responses.
+- **Hybrid Retrieval**: Dense semantic retrieval + BM25-style lexical retrieval for stronger precision on policy wording.
+- **Reciprocal Rank Fusion (RRF)**: Combines dense and lexical rankings into a more stable final top-k context set.
+- **Confidence-Aware Behavior**: Detects weak/conflicting retrieval signals and abstains with a clarifying question instead of overconfident answers.
+- **Grounded Evidence Output**: Returns citations and chunk-level metadata (including fused score and ranks) for transparency.
+- **Evaluation Harness**: Includes a lightweight eval script to track citation hit rate, top-1 hit rate, and latency.
 
 ### Tech Stack
 
-FastAPI + Next.js + Qdrant + Python/React
+FastAPI, Next.js, Qdrant, Python, and React
 
 ## 2. Setup Instructions
 
@@ -203,7 +206,7 @@ Query Breakdown:
 ```
 
 ## 5. Extensions Implemented & Trade Offs
-This project goes beyond a baseline RAG setup with retrieval quality upgrades, better ranking transparency, and frontend usability improvements.
+This project now extends the baseline RAG flow with retrieval fusion, confidence-aware response behavior, richer evidence metadata, and evaluation tooling to make quality improvements measurable.
 
 ### Hybrid Retrieval (Dense + Lexical)
 I extended retrieval to combine:
@@ -215,6 +218,29 @@ Why this matters:
 - Dense retrieval captures semantic similarity
 - Lexical retrieval improves exact-term matching for policy language
 - Combining both improves robustness across different query styles
+
+Trade-off:
+
+- Adds compute and implementation complexity compared to dense-only retrieval
+- Requires maintaining lexical metadata and corpus statistics in memory
+
+### BM25-Style Lexical Scoring Metadata
+During ingestion, each chunk now stores lexical metadata in RAG:
+
+- token list
+- term frequency map
+- chunk length
+- corpus document-frequency statistics for IDF
+
+Benefits:
+
+- Improves keyword sensitivity and exact-match behavior
+- Enables retrieval behavior that better handles policy clauses and constraints
+
+Trade-off:
+
+- Increases payload size and memory usage per chunk
+- Requires careful threshold tuning to avoid over-prioritizing exact terms
 
 ### Reciprocal Rank Fusion (RRF)
 I added rank fusion logic to merge dense and lexical results using Reciprocal Rank Fusion.
@@ -230,14 +256,44 @@ Benefit:
 - Reduces failure cases where one retriever misses an otherwise relevant chunk
 - Improves citation hit rate consistency across mixed query types
 
-### RRF Score in Output
-I exposed fused ranking score in the response payload so retrieved chunks include an interpretable relevance signal.
+Trade-off:
 
-Why this is useful:
+- Rank-based fusion can still surface near-duplicate chunks without a dedup/rerank pass
+- Fused scores are relative ranking signals, not calibrated probabilities
 
-- Makes retrieval behavior observable during debugging and evaluation
-- Helps explain why a citation appeared in the final answer
-- Supports future UI features like confidence indicators
+### Confidence and Abstain Behavior
+I added confidence gating before LLM generation:
+
+- Retrieval confidence is estimated from top score strength, score gap, and source diversity
+- If confidence is low or conflicting, the system abstains and asks a clarifying follow-up instead of forcing a definitive answer
+- Confidence diagnostics are returned in API metrics
+
+Benefit:
+
+- Safer product behavior and fewer overconfident answers
+- More transparent uncertainty handling for users and reviewers
+
+Trade-off:
+
+- Rule-based thresholds can be sensitive and may need calibration on larger eval sets
+- Some valid questions may receive a clarifying prompt instead of a direct answer
+
+### Richer Retrieval Transparency in API Output
+Ask responses now include chunk-level ranking evidence:
+
+- fused score
+- dense rank
+- lexical rank
+
+Benefits:
+
+- Makes evidence quality inspectable during demos and debugging
+- Supports grounded citation reasoning and future confidence UI features
+
+Trade-off:
+
+- Requires model/schema alignment between backend and frontend to avoid response mismatches
+- Additional metadata can increase payload size
 
 ### UI Polish
 I refined the frontend experience for both chat and ingestion flows:
@@ -250,11 +306,6 @@ Outcome:
 
 - Better demo readiness for the take-home
 - Easier to inspect ingestion, retrieval, and citation quality end to end
-
-### Trade-off Notes
-- Hybrid retrieval adds complexity and some extra compute over dense-only search
-- RRF improves ranking reliability but can surface near-duplicates if chunk deduping is limited
-- Exposing scores improves transparency, but score interpretation should be documented for non-technical users
 
 ## 6. What I’d Ship Next
 
