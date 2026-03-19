@@ -15,31 +15,45 @@ def test_metrics_after_ingest_and_ask(client):
     assert data["avg_retrieval_latency_ms"] == 0
     assert data["avg_generation_latency_ms"] == 0
 
-    client.post("/api/ask", json={"query":"What is the refund window for small appliances?"})
+    ask_r = client.post("/api/ask", json={"query":"What is the refund window for small appliances?"})
+    assert ask_r.status_code == 200
+    ask_data = ask_r.json()
     r2 = client.get("/api/metrics")
     assert r2.status_code == 200
     data2 = r2.json()
     assert data2["total_docs"] == data["total_docs"]
     assert data2["total_chunks"] == data["total_chunks"]
     assert data2["avg_retrieval_latency_ms"] > 0
-    assert data2["avg_generation_latency_ms"] > 0
 
-def test_ingest_and_ask(client):
-    r = client.post("/api/ingest")
+    if ask_data["metrics"].get("needs_clarification"):
+        assert data2["avg_generation_latency_ms"] == 0
+    else:
+        assert data2["avg_generation_latency_ms"] > 0
+
+def test_ask(client):
+    # Ask a deterministic question
+    r = client.post("/api/ask", json={"query":"What is the refund window for small appliances?"})
     assert r.status_code == 200
     data = r.json()
-    assert "indexed_docs" in data
-    assert "indexed_chunks" in data
+    assert "query" in data and data["query"] == "What is the refund window for small appliances?"
+    assert "citations" in data and len(data["citations"]) > 0
+    assert "chunks" in data and len(data["chunks"]) > 0
+    assert "answer" in data and isinstance(data["answer"], str)
+    assert "metrics" in data and "retrieval_ms" in data["metrics"] and "generation_ms" in data["metrics"] and "confidence" in data["metrics"] and "needs_clarification" in data["metrics"] and "confidence_reason" in data["metrics"] and "top_score" in data["metrics"] and "score_gap" in data["metrics"] and "source_diversity" in data["metrics"]
 
-    # Ask a deterministic question
-    r2 = client.post("/api/ask", json={"query":"What is the refund window for small appliances?"})
-    assert r2.status_code == 200
-    data2 = r2.json()
-    assert "query" in data2 and data2["query"] == "What is the refund window for small appliances?"
-    assert "citations" in data2 and len(data2["citations"]) > 0
-    assert "chunks" in data2 and len(data2["chunks"]) > 0
-    assert "answer" in data2 and isinstance(data2["answer"], str)
-    assert "metrics" in data2 and "retrieval_ms" in data2["metrics"] and "generation_ms" in data2["metrics"]
+def test_ask_low_confidence(client):
+    r = client.post("/api/ask", json={"query":"Hi"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["metrics"]["needs_clarification"] == True
+    assert "I found related info across" in data["answer"]
+
+def test_ask_high_confidence(client):
+    r = client.post("/api/ask", json={"query":"Can a customer return a damaged blender after 20 days?"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["metrics"]["needs_clarification"] == False
+    assert "I found related info across" not in data["answer"]
 
 def test_ask_missing_query(client):
     r = client.post("/api/ask", json={})

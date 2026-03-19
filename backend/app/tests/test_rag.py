@@ -137,10 +137,15 @@ def test_rrf_fuse_combines_rankings():
     fused = engine._rrf_fuse(dense_results, lexical_results, final_k=2, fusion_k=60)
     
     assert len(fused) == 2
-    for score, meta in fused:
-        assert isinstance(score, float), "Score should be RRF float value"
-        assert isinstance(meta, dict), "Metadata should be a dict"
-        assert "hash" in meta and "title" in meta and "text" in meta, "Metadata should contain hash, title, and text"
+    for item in fused:
+        assert isinstance(item, dict), "Each fused item should be a dict"
+        assert isinstance(item["score"], float), "Score should be RRF float value"
+        assert "hash" in item and "title" in item and "text" in item, \
+            "Fused item should contain hash, title, and text"
+        assert "dense_rank" in item and "lexical_rank" in item, \
+            "Fused item should include dense_rank and lexical_rank"
         
     # h2 should rank high because it appears in both rankings
-    assert fused[0][1]["hash"] == "h2", "Fused result should prioritize items in both rankings"
+    assert fused[0]["hash"] == "h2", "Fused result should prioritize items in both rankings"
+    assert fused[0]["dense_rank"] == 2
+    assert fused[0]["lexical_rank"] == 1
