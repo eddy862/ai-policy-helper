@@ -14,9 +14,13 @@ export default function AdminPanel() {
   const ingest = async () => {
     setBusy(true);
     try {
-      await apiIngest();
+      const res = await apiIngest();
       await refresh();
-    } finally {
+      console.log('Ingest result', res);
+    } catch (e: any) {
+      console.error('Error ingesting documents', e);
+    }
+    finally {
       setBusy(false);
     }
   };
@@ -24,19 +28,22 @@ export default function AdminPanel() {
   React.useEffect(() => { refresh(); }, []);
 
   return (
-    <div className="card">
-      <h2>Admin</h2>
-      <div style={{display:'flex', gap:8, marginBottom:8}}>
-        <button onClick={ingest} disabled={busy} style={{padding:'8px 12px', borderRadius:8, border:'1px solid #111', background:'#fff'}}>
+    <section className="admin-panel">
+      <h3>Workspace</h3>
+      <div className="admin-actions">
+        <button className="btn btn-primary" onClick={ingest} disabled={busy}>
           {busy ? 'Indexing...' : 'Ingest sample docs'}
         </button>
-        <button onClick={refresh} style={{padding:'8px 12px', borderRadius:8, border:'1px solid #111', background:'#fff'}}>Refresh metrics</button>
+        <button className="btn btn-secondary" onClick={refresh}>
+          Refresh metrics
+        </button>
       </div>
+
       {metrics && (
-        <div className="code">
+        <div className="metrics-box">
           <pre>{JSON.stringify(metrics, null, 2)}</pre>
         </div>
       )}
-    </div>
+    </section>
   );
 }

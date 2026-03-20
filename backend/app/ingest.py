@@ -1,6 +1,9 @@
 import os, re, hashlib
 from typing import List, Dict, Tuple
 from .settings import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _read_text_file(path: str) -> str:
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -43,6 +46,7 @@ def load_documents(data_dir: str) -> List[Dict]:
                 "section": section,
                 "text": body
             })
+    logger.info("Docs loaded: count=%d sample=%s", len(docs), docs[:2])
     return docs
 
 def doc_hash(text: str) -> str:

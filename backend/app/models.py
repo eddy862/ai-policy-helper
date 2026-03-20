@@ -8,6 +8,8 @@ class IngestResponse(BaseModel):
 class AskRequest(BaseModel):
     query: str
     k: int | None = 4
+    dense_k: int | None = 5
+    lexical_k: int | None = 5
 
 class Citation(BaseModel):
     title: str
@@ -17,6 +19,9 @@ class Chunk(BaseModel):
     title: str
     section: str | None = None
     text: str
+    score: float | None = None
+    dense_rank: int | None = None
+    lexical_rank: int | None = None
 
 class AskResponse(BaseModel):
     query: str
