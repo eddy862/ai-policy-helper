@@ -208,6 +208,23 @@ Query Breakdown:
 ## 5. Extensions Implemented & Trade Offs
 This project now extends the baseline RAG flow with retrieval fusion, confidence-aware response behavior, richer evidence metadata, and evaluation tooling to make quality improvements measurable.
 
+### Improved Markdown Section Chunking
+During ingestion, I refined how documents are split into titled sections to reduce redundancy and improve retrieval quality:
+
+1. **Drop redundant tuples**: If a section body equals its title (e.g., a heading with no content below), skip it entirely
+2. **Remove title duplication**: Strip the section title from the start of the body text to avoid repeating the same words twice
+3. **Clean markdown formatting**: Remove markdown syntax (`**`, `_`, `~`, backticks) from section bodies for cleaner chunking and better keyword matching
+
+Benefits:
+
+- Reduces noise in lexical retrieval (no over-emphasis on repeated titles)
+- Cleaner token counts and better BM25 scoring
+- Markdown formatting no longer interferes with keyword matching
+
+Trade-off:
+
+- Dividing policy text into sections can create orphaned fragments if document structure is inconsistent
+
 ### Hybrid Retrieval (Dense + Lexical)
 I extended retrieval to combine:
 
@@ -242,30 +259,35 @@ Trade-off:
 - Increases payload size and memory usage per chunk
 - Requires careful threshold tuning to avoid over-prioritizing exact terms
 
-### Reciprocal Rank Fusion (RRF)
-I added rank fusion logic to merge dense and lexical results using Reciprocal Rank Fusion.
+### Weighted Reciprocal Rank Fusion (RRF) with Dense/Lexical Control
+I extended RRF to support tunable weights for dense and lexical contributions.
 
 How it works:
 
-- Each candidate gets a rank contribution from dense and lexical lists
-- Contributions are fused into one final relevance score
-- Final ranking is more stable than relying on one retriever alone
+- Both dense and lexical retrievers produce ranked lists
+- Each retriever's contributions are weighted proportionally before fusion
+- Weights are normalized so they sum to 1.0 (e.g., dense=1.0, lexical=1.3 → 0.43 dense, 0.57 lexical)
+- Final score = `(dense_weight/(dense_weight+lexical_weight)) * dense_rrf + (lexical_weight/(dense_weight+lexical_weight)) * lexical_rrf`
 
-Benefit:
+Current defaults (configurable per query):
 
-- Reduces failure cases where one retriever misses an otherwise relevant chunk
-- Improves citation hit rate consistency across mixed query types
+- **dense_weight**: 1.0 (43% of final score)
+- **lexical_weight**: 1.3 (57% of final score)
+
+Benefits:
+
+- Lexical bias (1.3) helps policy Q&A where exact keyword matches matter (e.g., "refund window", "warranty period")
+- Tuning weights lets you shift toward semantic relevance (increase dense_weight) or keyword precision (increase lexical_weight) without code changes
 
 Trade-off:
 
-- Rank-based fusion can still surface near-duplicate chunks without a dedup/rerank pass
-- Fused scores are relative ranking signals, not calibrated probabilities
+- Weight tuning requires empirical eval; wrong thresholds can amplify weak signals from one retriever
 
 ### Confidence and Abstain Behavior
 I added confidence gating before LLM generation:
 
-- Retrieval confidence is estimated from top score strength, score gap, and source diversity
-- If confidence is low or conflicting, the system abstains and asks a clarifying follow-up instead of forcing a definitive answer
+- Retrieval confidence is estimated from top score strength
+- If confidence is low, the system abstains and asks a clarifying follow-up instead of forcing a definitive answer
 - Confidence diagnostics are returned in API metrics
 
 Benefit:

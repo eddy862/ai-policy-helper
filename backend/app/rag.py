@@ -282,15 +282,22 @@ class RAGEngine:
         self._all_meta.extend(metas)
         return (len(self._doc_titles) - len(doc_titles_before), len(metas))
     
-    # RRF score = 1/(fusion_k + dense_rank) + 1/(fusion_k + lexical_rank)
+    # RRF score = dense_weight * 1/(fusion_k + dense_rank) + lexical_weight * 1/(fusion_k + lexical_rank)
     def _rrf_fuse(
         self,
         dense_results: List[Tuple[float, Dict]],
         lexical_results: List[Tuple[float, Dict]],
         final_k: int = 4,
         fusion_k: int = 60,
+        dense_weight: float = 1.0,
+        lexical_weight: float = 1.3, 
     ) -> List[Dict]:
         by_id: Dict[str, Dict] = {}
+        
+        # normalize weights so they sum to 1
+        total_w = max(dense_weight + lexical_weight, 1e-9)
+        dw = dense_weight / total_w
+        lw = lexical_weight / total_w
 
         def _key(meta: Dict, fallback_rank: int, source: str) -> str:
             return str(meta.get("hash") or meta.get("id") or f"{source}:{fallback_rank}")
@@ -299,14 +306,14 @@ class RAGEngine:
             key = _key(meta, rank, "dense")
             if key not in by_id:
                 by_id[key] = {"meta": meta, "rrf": 0.0, "dense_rank": None, "lexical_rank": None}
-            by_id[key]["rrf"] += 1.0 / (fusion_k + rank)
+            by_id[key]["rrf"] += dw * 1.0 / (fusion_k + rank)
             by_id[key]["dense_rank"] = rank
 
         for rank, (_, meta) in enumerate(lexical_results, start=1):
             key = _key(meta, rank, "lex")
             if key not in by_id:
                 by_id[key] = {"meta": meta, "rrf": 0.0, "dense_rank": None, "lexical_rank": None}
-            by_id[key]["rrf"] += 1.0 / (fusion_k + rank)
+            by_id[key]["rrf"] += lw * 1.0 / (fusion_k + rank)
             by_id[key]["lexical_rank"] = rank
 
         ranked = sorted(by_id.values(), key=lambda x: x["rrf"], reverse=True)
@@ -374,37 +381,25 @@ class RAGEngine:
             **m
         }
 
-    def assess_confidence(self, contexts: List[Dict]) -> Dict:
+    def assess_confidence(self, contexts: List[Dict], top_threshold: float = 0.009) -> Dict:
         scores = [float(c.get("score", 0.0)) for c in contexts]
         top_score = scores[0]
-        second_score = scores[1] if len(scores) > 1 else 0.0
-        score_gap = top_score - second_score
 
         titles = [c.get("title", "") for c in contexts if c.get("title")]
-        source_diversity = len(set(titles))
 
-        # RRF score reference: max is around 0.0328 when rank 1 in both lists
-        weak_top = top_score < 0.015
-        flat_ranking = len(scores) > 1 and score_gap < 0.0015
-        conflicting_sources = source_diversity >= 2 and flat_ranking
+        weak_top = top_score < top_threshold
+        
+        need_clarification = False
+        reason = None
 
         if weak_top:
-            level = "low"
+            need_clarification = True
             reason = "weak_top_score"
-        elif conflicting_sources:
-            level = "conflict"
-            reason = "flat_scores_across_multiple_sources"
-        else:
-            level = "high"
-            reason = "sufficient_signal"
 
         confidence =  {
-            "level": level,
-            "needs_clarification": level in ["low", "conflict"],
+            "needs_clarification": need_clarification,
             "reason": reason,
             "top_score": round(top_score, 4),
-            "score_gap": round(score_gap, 4),
-            "source_diversity": source_diversity,
         }
 
         logger.info(f"Confidence assessment: {confidence} for contexts: {titles} with scores: {scores}")
@@ -427,11 +422,11 @@ class RAGEngine:
         return "Could you clarify what type of guidance you're looking for, such as return policy, warranty, delivery, product recall, or something else?"
 
     def build_abstain_answer(self, contexts: List[Dict], confidence: Dict) -> str:
-        logger.info(f"Building abstain answer due to confidence level: {confidence['level']} with reason: {confidence['reason']}")
+        logger.info(f"Building abstain answer due to {confidence['reason']}")
         cq = self.build_clarifying_question(contexts)
         return (
             "I am not fully confident the retrieved policy evidence is strong enough for a definitive answer.\n\n"
-            f"Reason: {confidence.get('reason', 'insufficient_signal')}.\n"
+            f"Reason: {confidence.get('reason', 'insufficient_signal')}.\n\n"
             f"{cq}"
         )
 

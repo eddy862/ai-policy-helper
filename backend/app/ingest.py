@@ -15,10 +15,25 @@ def _md_sections(text: str) -> List[Tuple[str, str]]:
     out = []
     for p in parts:
         p = p.strip()
+
         if not p:
             continue
         lines = p.splitlines()
         title = lines[0].lstrip("# ").strip() if lines and lines[0].startswith("#") else "Body"
+        
+        p = p.lstrip("# ").strip()
+        
+        # If the title is repeated as a heading in the body, we skip it to avoid redundancy
+        if p == title:
+            continue
+        
+        # remove the title from p
+        if p.startswith(title):
+            p = p[len(title):].strip()
+        
+        # I dont want like **bulky items**,  remove the ** or any markdown formatting for better chunking and retrieval
+        p = re.sub(r"[*_~`]+", "", p)
+
         out.append((title, p))
     return out or [("Body", text)]
 
