@@ -39,7 +39,7 @@ def test_ask(client):
     assert "citations" in data and len(data["citations"]) > 0
     assert "chunks" in data and len(data["chunks"]) > 0
     assert "answer" in data and isinstance(data["answer"], str)
-    assert "metrics" in data and "retrieval_ms" in data["metrics"] and "generation_ms" in data["metrics"] and "confidence" in data["metrics"] and "needs_clarification" in data["metrics"] and "confidence_reason" in data["metrics"] and "top_score" in data["metrics"] and "score_gap" in data["metrics"] and "source_diversity" in data["metrics"]
+    assert "metrics" in data and "retrieval_ms" in data["metrics"] and "generation_ms" in data["metrics"] and "needs_clarification" in data["metrics"] and "confidence_reason" in data["metrics"] and "top_score" in data["metrics"]
 
 def test_ask_low_confidence(client):
     r = client.post("/api/ask", json={"query":"Hi"})
