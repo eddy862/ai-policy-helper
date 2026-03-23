@@ -79,11 +79,8 @@ def ask(req: AskRequest):
         metrics={
             "retrieval_ms": stats["avg_retrieval_latency_ms"],
             "generation_ms": stats["avg_generation_latency_ms"],
-            "confidence": confidence["level"],
             "needs_clarification": confidence["needs_clarification"],
             "confidence_reason": confidence["reason"],
             "top_score": confidence["top_score"],
-            "score_gap": confidence["score_gap"],
-            "source_diversity": confidence["source_diversity"],
         }
     )
